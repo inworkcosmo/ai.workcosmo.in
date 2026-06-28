@@ -67,9 +67,24 @@ module.exports = async (req, res) => {
         {
           role: 'system',
           content: `You are Workcosmo AI, an internal workspace assistant for HR and recruiting teams.
-Answer using ONLY the workspace context below. Be concise, accurate, and professional.
-If data is missing, say so. Never invent candidate names, job IDs, or record details.
-When referencing records, include their IDs from the context when helpful.
+You can read the workspace context and PERFORM ACTIONS on behalf of the user when asked.
+
+SUPPORTED ACTIONS:
+1. "create_job"
+   Params: { "title": string (req), "department": string, "designation": string, "location": string, "priority": "Urgent"|"Medium"|"Low", "status": "Open"|"Draft"|"Closed", "budget": number (in LPA, e.g. 6), "requirements": array of strings, "skills": array of strings }
+2. "update_job_status"
+   Params: { "jobId": string (req), "status": "Open"|"Closed"|"Draft" (req) }
+3. "create_candidate"
+   Params: { "name": string (req), "email": string (req), "phone": string, "jobId": string (req), "stage": string, "source": string }
+4. "schedule_interview"
+   Params: { "candidateId": string (req), "dateTime": ISO-8601 string (req), "mode": string, "status": string, "interviewers": array of strings }
+5. "create_offer"
+   Params: { "candidateId": string (req), "designation": string (req), "status": "Draft"|"Sent"|"Accepted"|"Rejected" }
+
+When the user asks you to perform one of these, execute it immediately by appending this EXACT JSON format to the very end of your response:
+:::ACTION{"action":"action_name","params":{...}}:::
+
+Always output the ACTION block at the end. Be concise, accurate, and professional. Use ONLY the workspace context below.
 
 ${contextBlock}`
         },
@@ -79,9 +94,32 @@ ${contextBlock}`
       temperature: 0.4
     });
 
+    // Parse action if present
+    const actionRegex = /:::ACTION(\{.*?\}):::/;
+    const match = reply.match(actionRegex);
+    let actionResult = null;
+    let cleanReply = reply;
+
+    if (match) {
+      try {
+        const actionData = JSON.parse(match[1]);
+        const { executeAction } = require('../../lib/actionExecutor');
+        actionResult = await executeAction(actionData.action, actionData.params, ctx);
+        cleanReply = reply.replace(actionRegex, '').trim();
+      } catch (err) {
+        actionResult = { success: false, error: err.message };
+        cleanReply = reply.replace(actionRegex, '').trim() + `\n\n*(Error performing action: ${err.message})*`;
+      }
+    }
+
     const now = new Date().toISOString();
     const userMessage = { role: 'user', content: String(message).trim(), createdAt: now };
-    const assistantMessage = { role: 'assistant', content: reply, createdAt: now };
+    const assistantMessage = {
+      role: 'assistant',
+      content: cleanReply,
+      createdAt: now,
+      ...(actionResult ? { actionResult } : {})
+    };
 
     let savedId = conversation?.id;
     if (conversation) {
@@ -115,9 +153,10 @@ ${contextBlock}`
     res.status(200).json({
       success: true,
       conversationId: savedId,
-      reply,
+      reply: cleanReply,
       creditsUsed: 1,
-      creditsRemaining
+      creditsRemaining,
+      actionResult
     });
   } catch (error) {
     if (ctx && ledgerId) {

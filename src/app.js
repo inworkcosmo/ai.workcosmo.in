@@ -82,9 +82,39 @@ function renderMessages(messages = []) {
   messages.forEach((msg) => {
     const bubble = document.createElement("article");
     bubble.className = `message message--${msg.role}`;
+    
+    let actionHtml = "";
+    if (msg.actionResult) {
+      const res = msg.actionResult;
+      if (res.success) {
+        actionHtml = `
+          <div class="action-result-card">
+            <div class="action-result-icon"><i class="fas fa-circle-check"></i></div>
+            <div class="action-result-content">
+              <div class="action-result-title">Action Executed</div>
+              <div class="action-result-details">${escapeHtml(res.summary)} (ID: ${escapeHtml(res.id)})</div>
+            </div>
+          </div>
+        `;
+      } else {
+        actionHtml = `
+          <div class="action-result-card error">
+            <div class="action-result-icon"><i class="fas fa-circle-xmark"></i></div>
+            <div class="action-result-content">
+              <div class="action-result-title">Action Failed</div>
+              <div class="action-result-details">${escapeHtml(res.error || "Unknown error")}</div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
     bubble.innerHTML = `
       <div class="message-avatar">${msg.role === "assistant" ? '<i class="fas fa-brain"></i>' : '<i class="fas fa-user"></i>'}</div>
-      <div class="message-body">${escapeHtml(msg.content).replace(/\n/g, "<br>")}</div>
+      <div class="message-body">
+        <div>${escapeHtml(msg.content).replace(/\n/g, "<br>")}</div>
+        ${actionHtml}
+      </div>
     `;
     els.messages.appendChild(bubble);
   });
@@ -207,9 +237,39 @@ async function sendMessage(message) {
 
     const assistantBubble = document.createElement("article");
     assistantBubble.className = "message message--assistant";
+    
+    let actionHtml = "";
+    if (data.actionResult) {
+      const res = data.actionResult;
+      if (res.success) {
+        actionHtml = `
+          <div class="action-result-card">
+            <div class="action-result-icon"><i class="fas fa-circle-check"></i></div>
+            <div class="action-result-content">
+              <div class="action-result-title">Action Executed</div>
+              <div class="action-result-details">${escapeHtml(res.summary)} (ID: ${escapeHtml(res.id)})</div>
+            </div>
+          </div>
+        `;
+      } else {
+        actionHtml = `
+          <div class="action-result-card error">
+            <div class="action-result-icon"><i class="fas fa-circle-xmark"></i></div>
+            <div class="action-result-content">
+              <div class="action-result-title">Action Failed</div>
+              <div class="action-result-details">${escapeHtml(res.error || "Unknown error")}</div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
     assistantBubble.innerHTML = `
       <div class="message-avatar"><i class="fas fa-brain"></i></div>
-      <div class="message-body">${escapeHtml(data.reply).replace(/\n/g, "<br>")}</div>
+      <div class="message-body">
+        <div>${escapeHtml(data.reply).replace(/\n/g, "<br>")}</div>
+        ${actionHtml}
+      </div>
     `;
     els.messages.appendChild(assistantBubble);
     els.messages.scrollTop = els.messages.scrollHeight;
