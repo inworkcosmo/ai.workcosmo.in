@@ -43,6 +43,15 @@ async function authHeaders() {
   };
 }
 
+async function safeJson(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(text || `Server error (${res.status})`);
+  }
+}
+
 function escapeHtml(value = "") {
   return String(value)
     .replace(/&/g, "&amp;")
@@ -103,7 +112,7 @@ async function loadConversations() {
     method: "GET",
     headers
   });
-  const data = await res.json();
+  const data = await safeJson(res);
   if (!res.ok) throw new Error(data.error || "Could not load conversations");
   state.conversations = data.conversations || [];
   renderConversationList();
@@ -116,7 +125,7 @@ async function openConversation(conversationId) {
     headers,
     body: JSON.stringify({ companyId: state.companyId, conversationId })
   });
-  const data = await res.json();
+  const data = await safeJson(res);
   if (!res.ok) throw new Error(data.error || "Could not open conversation");
 
   state.conversationId = conversationId;
@@ -131,7 +140,7 @@ async function deleteConversation(conversationId) {
     method: "DELETE",
     headers
   });
-  const data = await res.json();
+  const data = await safeJson(res);
   if (!res.ok) throw new Error(data.error || "Could not delete conversation");
 
   if (state.conversationId === conversationId) {
@@ -185,7 +194,7 @@ async function sendMessage(message) {
         message
       })
     });
-    const data = await res.json();
+    const data = await safeJson(res);
     typing.remove();
 
     if (!res.ok) {
