@@ -1,0 +1,15 @@
+{
+  "name": "workcosmo-ai",
+  "private": true,
+  "version": "1.0.0",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "npx -y live-server . --port=8095",
+    "format": "npx prettier --write \"**/*.{js,html,css}\""
+  },
+  "dependencies": {
+    "firebase": "^10.0.0",
+    "firebase-admin": "^13.9.0",
+    "live-server": "^1.2.2"
+  }
+}

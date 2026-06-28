@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workcosmo AI</title>
+  <meta name="description" content="Workcosmo AI workspace assistant for your company data.">
+  <link rel="icon" type="image/png" href="https://workcosmo.in/app/assets/images/favicon.png">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+
+<body>
+  <div id="auth-loader" class="auth-loader">
+    <div class="loader-content">
+      <div class="loader-brand">
+        <img src="https://workcosmo.in/src/images/ngu_logo.png" alt="Workcosmo">
+        <span>Workcosmo AI</span>
+      </div>
+      <div class="loader-spinner"></div>
+      <p>Verifying your session...</p>
+    </div>
+  </div>
+
+  <div id="app-shell" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <a href="https://space.workcosmo.in" class="sidebar-brand">
+          <img src="https://workcosmo.in/src/images/ngu_logo.png" alt="Workcosmo">
+          <span>Workcosmo AI</span>
+        </a>
+        <button id="new-chat-btn" type="button" class="new-chat-btn">
+          <i class="fas fa-plus"></i>
+          New chat
+        </button>
+      </div>
+      <div id="conversation-list" class="conversation-list"></div>
+      <div class="sidebar-footer">
+        <div class="credit-pill">
+          <i class="fas fa-coins"></i>
+          <span id="credits-label">— credits</span>
+        </div>
+        <button id="sign-out-btn" type="button" class="ghost-btn">
+          <i class="fas fa-arrow-right-from-bracket"></i>
+          Sign out
+        </button>
+      </div>
+    </aside>
+
+    <main class="chat-main">
+      <header class="chat-header">
+        <div>
+          <p class="eyebrow">Workspace Assistant</p>
+          <h1 id="workspace-title">Workspace</h1>
+        </div>
+        <div class="header-meta">
+          <span id="user-label" class="user-label">User</span>
+        </div>
+      </header>
+
+      <section id="messages" class="messages">
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon"><i class="fas fa-brain"></i></div>
+          <h2>Ask anything about your workspace</h2>
+          <p>Jobs, candidates, interviews, offers, and team data — scoped to your company.</p>
+        </div>
+      </section>
+
+      <form id="composer-form" class="composer">
+        <textarea id="composer-input" rows="1" placeholder="Message Workcosmo AI..." required></textarea>
+        <button id="send-btn" type="submit" aria-label="Send message">
+          <i class="fas fa-paper-plane"></i>
+        </button>
+      </form>
+    </main>
+  </div>
+
+  <script type="module" src="./src/app.js"></script>
+</body>
+
+</html>
