@@ -133,29 +133,31 @@ function renderMessages(messages = []) {
     bubble.className = `message message--${msg.role}`;
     
     let actionHtml = "";
-    if (msg.actionResult) {
-      const res = msg.actionResult;
-      if (res.success) {
-        actionHtml = `
-          <div class="action-result-card">
-            <div class="action-result-icon"><i class="fas fa-circle-check"></i></div>
-            <div class="action-result-content">
-              <div class="action-result-title">Action Executed</div>
-              <div class="action-result-details">${escapeHtml(res.summary)} (ID: ${escapeHtml(res.id)})</div>
+    const results = msg.actionResults || (msg.actionResult ? [msg.actionResult] : []);
+    if (results.length > 0) {
+      actionHtml = results.map(res => {
+        if (res.success) {
+          return `
+            <div class="action-result-card">
+              <div class="action-result-icon"><i class="fas fa-circle-check"></i></div>
+              <div class="action-result-content">
+                <div class="action-result-title">Action Executed</div>
+                <div class="action-result-details">${escapeHtml(res.summary)} (ID: ${escapeHtml(res.id)})</div>
+              </div>
             </div>
-          </div>
-        `;
-      } else {
-        actionHtml = `
-          <div class="action-result-card error">
-            <div class="action-result-icon"><i class="fas fa-circle-xmark"></i></div>
-            <div class="action-result-content">
-              <div class="action-result-title">Action Failed</div>
-              <div class="action-result-details">${escapeHtml(res.error || "Unknown error")}</div>
+          `;
+        } else {
+          return `
+            <div class="action-result-card error">
+              <div class="action-result-icon"><i class="fas fa-circle-xmark"></i></div>
+              <div class="action-result-content">
+                <div class="action-result-title">Action Failed</div>
+                <div class="action-result-details">${escapeHtml(res.error || "Unknown error")}</div>
+              </div>
             </div>
-          </div>
-        `;
-      }
+          `;
+        }
+      }).join("");
     }
 
     bubble.innerHTML = `
@@ -288,29 +290,31 @@ async function sendMessage(message) {
     assistantBubble.className = "message message--assistant";
     
     let actionHtml = "";
-    if (data.actionResult) {
-      const res = data.actionResult;
-      if (res.success) {
-        actionHtml = `
-          <div class="action-result-card">
-            <div class="action-result-icon"><i class="fas fa-circle-check"></i></div>
-            <div class="action-result-content">
-              <div class="action-result-title">Action Executed</div>
-              <div class="action-result-details">${escapeHtml(res.summary)} (ID: ${escapeHtml(res.id)})</div>
+    const results = data.actionResults || (data.actionResult ? [data.actionResult] : []);
+    if (results.length > 0) {
+      actionHtml = results.map(res => {
+        if (res.success) {
+          return `
+            <div class="action-result-card">
+              <div class="action-result-icon"><i class="fas fa-circle-check"></i></div>
+              <div class="action-result-content">
+                <div class="action-result-title">Action Executed</div>
+                <div class="action-result-details">${escapeHtml(res.summary)} (ID: ${escapeHtml(res.id)})</div>
+              </div>
             </div>
-          </div>
-        `;
-      } else {
-        actionHtml = `
-          <div class="action-result-card error">
-            <div class="action-result-icon"><i class="fas fa-circle-xmark"></i></div>
-            <div class="action-result-content">
-              <div class="action-result-title">Action Failed</div>
-              <div class="action-result-details">${escapeHtml(res.error || "Unknown error")}</div>
+          `;
+        } else {
+          return `
+            <div class="action-result-card error">
+              <div class="action-result-icon"><i class="fas fa-circle-xmark"></i></div>
+              <div class="action-result-content">
+                <div class="action-result-title">Action Failed</div>
+                <div class="action-result-details">${escapeHtml(res.error || "Unknown error")}</div>
+              </div>
             </div>
-          </div>
-        `;
-      }
+          `;
+        }
+      }).join("");
     }
 
     assistantBubble.innerHTML = `

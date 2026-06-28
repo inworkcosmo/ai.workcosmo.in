@@ -95,10 +95,23 @@ SUPPORTED ACTIONS:
 6. "create_offer"
    Params: { "candidateId": string (req), "designation": string (req), "status": "Draft"|"Sent"|"Accepted"|"Rejected" }
 
-When the user asks you to perform one of these, execute it immediately by appending this EXACT JSON format to the very end of your response:
-:::ACTION{"action":"action_name","params":{...}}:::
+TONE AND STYLE:
+Be warm, conversational, friendly, and helpful. Use a natural conversational flow. Avoid robotic, overly brief, or dry replies. Introduce yourself when appropriate, explain what you can do, and make the user feel supported.
 
-Always output the ACTION block at the end if you perform one. Be concise, accurate, and professional.
+CONFIRMATION FLOW & MULTI-STEP PLANS:
+You MUST always seek confirmation before executing any action (creating, updating, or deleting records).
+1. Step 1 (Proposal): When the user asks you to perform an action (or proposes a complex multi-step goal like "Hire a DevOps engineer named Bob"), layout the steps in a friendly proposal (e.g. "1. Create Job, 2. Add Candidate") and ask for confirmation: "Would you like me to execute this plan?" or similar. Do NOT output any :::ACTION block in this step.
+2. Step 2 (Execution): Only when the user explicitly confirms (e.g. says "yes", "go ahead", "do it"), output all the matching ACTION blocks at the very end of your response.
+
+MULTIPLE ACTIONS & ID PLACEHOLDERS:
+When executing a multi-action plan, a subsequent action might depend on the ID of a record created in a previous step (e.g. creating a candidate needs the jobId from the job creation step). You can link them using placeholders:
+- In the action that creates the first record, add a top-level property "id_placeholder": "some_unique_name".
+- In the parameters of any subsequent action, reference the ID as "$some_unique_name".
+Example:
+:::ACTION{"action":"create_job","id_placeholder":"dev_job","params":{"title":"Developer",...}}:::
+:::ACTION{"action":"create_candidate","params":{"name":"Bob","jobId":"$dev_job",...}}:::
+
+Always output the ACTION blocks at the very end. Keep the conversational part warm and friendly.
 
 Use only the workspace context enclosed in the tags below to answer:
 <context>
@@ -113,21 +126,49 @@ CRITICAL: Do NOT echo, quote, repeat or print the text headings of this context 
       temperature: 0.4
     });
 
-    // Parse action if present
-    const actionRegex = /:::ACTION(\{.*?\}):::/;
-    const match = reply.match(actionRegex);
-    let actionResult = null;
-    let cleanReply = reply;
+    // Parse actions if present (supports multiple)
+    const actionRegex = /:::ACTION(\{.*?\}):::/g;
+    const matches = [...reply.matchAll(actionRegex)];
+    let actionResults = [];
+    let cleanReply = reply.replace(actionRegex, '').trim();
 
-    if (match) {
+    if (matches.length > 0) {
       try {
-        const actionData = JSON.parse(match[1]);
         const { executeAction } = require('../../lib/actionExecutor');
-        actionResult = await executeAction(actionData.action, actionData.params, ctx);
-        cleanReply = reply.replace(actionRegex, '').trim();
+        const placeholders = {};
+
+        for (const match of matches) {
+          const actionData = JSON.parse(match[1]);
+
+          // Substitute placeholder variables ($placeholder_name) in parameters
+          if (actionData.params && typeof actionData.params === 'object') {
+            for (const [key, val] of Object.entries(actionData.params)) {
+              if (typeof val === 'string' && val.startsWith('$')) {
+                const placeholderKey = val.slice(1);
+                if (placeholders[placeholderKey]) {
+                  actionData.params[key] = placeholders[placeholderKey];
+                }
+              } else if (Array.isArray(val)) {
+                actionData.params[key] = val.map(item => {
+                  if (typeof item === 'string' && item.startsWith('$')) {
+                    const pk = item.slice(1);
+                    return placeholders[pk] || item;
+                  }
+                  return item;
+                });
+              }
+            }
+          }
+
+          const result = await executeAction(actionData.action, actionData.params, ctx);
+          actionResults.push(result);
+
+          if (actionData.id_placeholder && result.success && result.id) {
+            placeholders[actionData.id_placeholder] = result.id;
+          }
+        }
       } catch (err) {
-        actionResult = { success: false, error: err.message };
-        cleanReply = reply.replace(actionRegex, '').trim() + `\n\n*(Error performing action: ${err.message})*`;
+        actionResults.push({ success: false, error: err.message });
       }
     }
 
@@ -137,7 +178,7 @@ CRITICAL: Do NOT echo, quote, repeat or print the text headings of this context 
       role: 'assistant',
       content: cleanReply,
       createdAt: now,
-      ...(actionResult ? { actionResult } : {})
+      ...(actionResults.length > 0 ? { actionResults } : {})
     };
 
     let savedId = conversation?.id;
@@ -175,7 +216,7 @@ CRITICAL: Do NOT echo, quote, repeat or print the text headings of this context 
       reply: cleanReply,
       creditsUsed: 1,
       creditsRemaining,
-      actionResult
+      actionResults
     });
   } catch (error) {
     if (ctx && ledgerId) {
