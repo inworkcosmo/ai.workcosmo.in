@@ -84,9 +84,14 @@ SUPPORTED ACTIONS:
 When the user asks you to perform one of these, execute it immediately by appending this EXACT JSON format to the very end of your response:
 :::ACTION{"action":"action_name","params":{...}}:::
 
-Always output the ACTION block at the end. Be concise, accurate, and professional. Use ONLY the workspace context below.
+Always output the ACTION block at the end if you perform one. Be concise, accurate, and professional.
 
-${contextBlock}`
+Use only the workspace context enclosed in the tags below to answer:
+<context>
+${contextBlock}
+</context>
+
+CRITICAL: Do NOT echo, quote, repeat or print the text headings of this context (like "Workspace:", "Open jobs sample:", "All jobs sample:", "Candidates sample:", "Interviews sample:", "Offers sample:", "Team sample:", "Departments list:", "Designations list:") in your response. Just write a direct, friendly human message.`
         },
         ...history,
         { role: 'user', content: String(message).trim() }

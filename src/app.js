@@ -60,6 +60,55 @@ function escapeHtml(value = "") {
     .replace(/"/g, "&quot;");
 }
 
+function parseMarkdown(text = "") {
+  const lines = text.split("\n");
+  const htmlResult = [];
+  let inList = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    if (line.trim().startsWith("```")) {
+      htmlResult.push(line.trim());
+      continue;
+    }
+
+    const bulletMatch = line.match(/^\s*[-*+]\s+(.+)$/);
+    if (bulletMatch) {
+      if (!inList) {
+        inList = true;
+        htmlResult.push("<ul>");
+      }
+      htmlResult.push(`<li>${escapeHtml(bulletMatch[1])}</li>`);
+    } else {
+      if (inList) {
+        inList = false;
+        htmlResult.push("</ul>");
+      }
+      htmlResult.push(escapeHtml(line));
+    }
+  }
+  if (inList) {
+    htmlResult.push("</ul>");
+  }
+
+  let html = htmlResult.join("\n");
+
+  html = html.replace(/```([\s\S]*?)```/g, (match, p1) => {
+    return `<pre class="code-block"><code>${p1.trim()}</code></pre>`;
+  });
+
+  html = html.split(/(<pre[\s\S]*?<\/pre>)/g).map((part) => {
+    if (part.startsWith("<pre")) return part;
+    let res = part.replace(/`([^`]+)`/g, "<code>$1</code>");
+    res = res.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    res = res.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+    return res.replace(/\n/g, "<br>");
+  }).join("");
+
+  return html;
+}
+
 function formatCredits(value) {
   return Number(value || 0).toLocaleString("en-IN");
 }
@@ -112,7 +161,7 @@ function renderMessages(messages = []) {
     bubble.innerHTML = `
       <div class="message-avatar">${msg.role === "assistant" ? '<i class="fas fa-brain"></i>' : '<i class="fas fa-user"></i>'}</div>
       <div class="message-body">
-        <div>${escapeHtml(msg.content).replace(/\n/g, "<br>")}</div>
+        <div>${parseMarkdown(msg.content)}</div>
         ${actionHtml}
       </div>
     `;
@@ -200,7 +249,7 @@ async function sendMessage(message) {
   userBubble.className = "message message--user";
   userBubble.innerHTML = `
     <div class="message-avatar"><i class="fas fa-user"></i></div>
-    <div class="message-body">${escapeHtml(message).replace(/\n/g, "<br>")}</div>
+    <div class="message-body">${parseMarkdown(message)}</div>
   `;
   renderEmptyState(false);
   els.messages.appendChild(userBubble);
@@ -267,7 +316,7 @@ async function sendMessage(message) {
     assistantBubble.innerHTML = `
       <div class="message-avatar"><i class="fas fa-brain"></i></div>
       <div class="message-body">
-        <div>${escapeHtml(data.reply).replace(/\n/g, "<br>")}</div>
+        <div>${parseMarkdown(data.reply)}</div>
         ${actionHtml}
       </div>
     `;
