@@ -55,10 +55,19 @@ module.exports = async (req, res) => {
     const context = await buildCompanyContext(ctx.company.id, ctx.company);
     const contextBlock = formatContextForPrompt(context);
     const priorMessages = Array.isArray(conversation?.messages) ? conversation.messages : [];
-    const history = priorMessages.slice(-12).map((item) => ({
-      role: item.role === 'assistant' ? 'assistant' : 'user',
-      content: item.content
-    }));
+    const history = priorMessages.slice(-12).map((item) => {
+      let content = item.content || '';
+      if (item.role === 'assistant') {
+        const index = content.indexOf('Workspace:');
+        if (index !== -1 && content.includes('All jobs sample:')) {
+          content = content.substring(0, index).trim();
+        }
+      }
+      return {
+        role: item.role === 'assistant' ? 'assistant' : 'user',
+        content
+      };
+    });
 
     const model = process.env.HF_CHAT_MODEL || 'meta-llama/Llama-3.1-8B-Instruct';
     const reply = await callHuggingFaceChat({
@@ -72,13 +81,18 @@ You can read the workspace context and PERFORM ACTIONS on behalf of the user whe
 SUPPORTED ACTIONS:
 1. "create_job"
    Params: { "title": string (req), "department": string, "designation": string, "location": string, "priority": "Urgent"|"Medium"|"Low", "status": "Open"|"Draft"|"Closed", "budget": number (in LPA, e.g. 6), "requirements": array of strings, "skills": array of strings }
-2. "update_job_status"
-   Params: { "jobId": string (req), "status": "Open"|"Closed"|"Draft" (req) }
-3. "create_candidate"
+2. "update_record"
+   Params: { "collection": "jobs"|"candidates"|"interviews"|"offers" (req), "id": string (req), "data": object (fields to update) (req) }
+   Example: To close a job: { "collection": "jobs", "id": "job_id_here", "data": { "status": "Closed" } }
+   Example: To update candidate name: { "collection": "candidates", "id": "cand_id_here", "data": { "name": "New Name" } }
+3. "delete_record"
+   Params: { "collection": "jobs"|"candidates"|"interviews"|"offers" (req), "id": string (req) }
+   Example: To delete a candidate: { "collection": "candidates", "id": "cand_id_here" }
+4. "create_candidate"
    Params: { "name": string (req), "email": string (req), "phone": string, "jobId": string (req), "stage": string, "source": string }
-4. "schedule_interview"
+5. "schedule_interview"
    Params: { "candidateId": string (req), "dateTime": ISO-8601 string (req), "mode": string, "status": string, "interviewers": array of strings }
-5. "create_offer"
+6. "create_offer"
    Params: { "candidateId": string (req), "designation": string (req), "status": "Draft"|"Sent"|"Accepted"|"Rejected" }
 
 When the user asks you to perform one of these, execute it immediately by appending this EXACT JSON format to the very end of your response:
