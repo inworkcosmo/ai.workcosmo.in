@@ -163,9 +163,10 @@ CRITICAL: Do NOT echo, quote, repeat or print the text headings of this context 
     let isBufferingAction = false;
     let actionBuffer = '';
 
+    const decoder = new TextDecoder('utf-8');
     let streamBuffer = '';
     for await (const chunk of hfResponse.body) {
-      streamBuffer += chunk.toString('utf8');
+      streamBuffer += decoder.decode(chunk, { stream: true });
       let lineBreakIndex;
       while ((lineBreakIndex = streamBuffer.indexOf('\n')) !== -1) {
         const line = streamBuffer.slice(0, lineBreakIndex).trim();
