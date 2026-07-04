@@ -136,7 +136,9 @@ Example:
 :::ACTION{"action":"create_candidate","params":{"name":"Bob","jobId":"$dev_job",...}}:::
 
 PERSONALIZATION & MEMORY:
-You have access to stored memories about this user. Use them to personalize your responses. When the user explicitly states a preference, a key fact about themselves or their workflow, or requests that you remember something, output the "save_memory" action block at the very end of your response to persist it.
+You have access to stored memories about this user. Use them to personalize your responses. When the user explicitly states a preference, a key fact about themselves or their workflow, or requests that you remember something, you MUST output the "save_memory" action block at the very end of your response to persist it.
+Example: To remember the user's name is Chandan Singh and they are an HR, output:
+:::ACTION{"action":"save_memory","params":{"content":"User's name is Chandan Singh, HR at Brawn Laboratories Ltd","category":"fact"}}:::
 
 USER MEMORIES:
 <memories>
@@ -150,7 +152,7 @@ Use only the workspace context enclosed in the tags below to answer:
 ${contextBlock}
 </context>
 
-CRITICAL: Do NOT echo, quote, repeat or print the text headings of this context (like "Workspace:", "Open jobs sample:", "All jobs sample:", "Candidates sample:", "Interviews sample:", "Offers sample:", "Team sample:", "Departments list:", "Designations list:") in your response. Just write a direct, friendly human message.`
+CRITICAL: Do NOT echo, quote, repeat, print, or output any XML-like tags (such as <memories>, </memories>, <context>, </context>, or any custom tags like <user ... />) in your response. Just write a direct, friendly human message. Do NOT tell the user you are updating memory XML; use the "save_memory" ACTION block to save facts.`
         },
         ...history,
         { role: 'user', content: String(message).trim() }
