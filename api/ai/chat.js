@@ -122,10 +122,18 @@ SUPPORTED ACTIONS:
    Example: :::ACTION{"action":"save_memory","params":{"content":"User prefers candidate tables sorted by status","category":"preference"}}:::
 
 TONE AND STYLE:
-Be warm, conversational, friendly, and helpful. Use a natural conversational flow. Avoid robotic, overly brief, or dry replies. Introduce yourself when appropriate, explain what you can do, and make the user feel supported.
+Be warm, conversational, friendly, and helpful. Use a natural conversational flow. Avoid robotic, overly brief, or dry replies.
+
+STRICT ACTION DECISION RULES:
+- ONLY output an action block if the user explicitly requested that specific operation (e.g. "delete this candidate" or "create a new job").
+- NEVER output database action blocks (like create_job or delete_record) when the user is only asking a question, chatting, writing emails, drafting LinkedIn posts, or writing copy.
+- DO NOT duplicate action blocks. Never output multiple action blocks doing the same thing.
+- When deleting or updating, look up the record ID in the <context> first. Only output delete_record with the exact ID from the context. Do NOT guess the ID, and NEVER create a new record instead of deleting/updating one.
+- If the user asks to delete a job, only output ONE "delete_record" action block for that job ID. Do NOT output a "create_job" block.
 
 ACTION CONFIRMATION & EXECUTION:
-Whenever the user asks you to perform an action (like creating, updating, or deleting a record), output the corresponding ACTION blocks at the very end of your response. The interface will render interactive confirmation cards for the user to execute them. Keep the conversational part of your response friendly, welcoming, and explain what actions you've prepared for confirmation.
+Whenever the user asks you to perform an action (like creating a job, adding a candidate, scheduling an interview, or updating records), output the corresponding ACTION blocks at the very end of your response.
+CRITICAL: In your text response, you must speak in the PROPOSAL or FUTURE tense (e.g., "I have drafted a job posting proposal for you" or "I have prepared the interview schedule plan"). Do NOT say "I have created the job" or "I have scheduled the interview" in past tense, as the action is not executed yet. Explain to the user that they need to click the "Execute Plan" button on the confirmation card below to actually run the actions on the server.
 
 MULTIPLE ACTIONS & ID PLACEHOLDERS:
 When executing a multi-action plan, a subsequent action might depend on the ID of a record created in a previous step (e.g. creating a candidate needs the jobId from the job creation step). You can link them using placeholders:
@@ -136,7 +144,8 @@ Example:
 :::ACTION{"action":"create_candidate","params":{"name":"Bob","jobId":"$dev_job",...}}:::
 
 PERSONALIZATION & MEMORY:
-You have access to stored memories about this user. Use them to personalize your responses. When the user explicitly states a preference, a key fact about themselves or their workflow, or requests that you remember something, you MUST output the "save_memory" action block at the very end of your response to persist it.
+You MUST actively use the provided user memories to personalize, contextualize, and enhance your responses. Do not ignore them; integrate them seamlessly. For example, address the user by their name, adjust details based on their role, department, or location, and recall preferences they shared.
+When the user explicitly states a preference, a key fact about themselves or their workflow, or requests that you remember something, you MUST output the "save_memory" action block at the very end of your response to persist it.
 Example: To remember the user's name is Chandan Singh and they are an HR, output:
 :::ACTION{"action":"save_memory","params":{"content":"User's name is Chandan Singh, HR at Brawn Laboratories Ltd","category":"fact"}}:::
 
@@ -221,7 +230,15 @@ CRITICAL: Do NOT echo, quote, repeat, print, or output any XML-like tags (such a
       for (const match of matches) {
         try {
           const actionData = JSON.parse(match[1]);
-          proposedActions.push(actionData);
+          if (actionData.action === 'save_memory') {
+            const { saveMemory } = require('../../lib/memoryManager');
+            await saveMemory(ctx.user.id, ctx.company.id, actionData.params.content, actionData.params.category || 'fact', 'auto');
+          } else if (actionData.action === 'delete_memory') {
+            const { deleteMemory } = require('../../lib/memoryManager');
+            await deleteMemory(actionData.params.id, ctx.user.id);
+          } else {
+            proposedActions.push(actionData);
+          }
         } catch (e) {
           // Ignore json parse error of action block
         }

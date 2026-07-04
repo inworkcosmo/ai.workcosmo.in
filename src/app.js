@@ -719,6 +719,7 @@ async function sendMessage(message) {
             state.conversationId = data.conversationId;
             state.creditsRemaining = data.creditsRemaining ?? state.creditsRemaining;
             updateCreditsLabel();
+            loadMemories().catch(() => {});
 
             if (assistantBubble) {
               assistantBubble.dataset.raw = replyText;
