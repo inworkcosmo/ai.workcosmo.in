@@ -204,6 +204,9 @@ function parseMarkdown(text = "") {
 
 const actionToolbarHtml = `
   <div class="message-actions">
+    <button type="button" class="msg-action-btn msg-action-btn--speak" title="Speak reply">
+      <i class="fas fa-volume-high"></i>
+    </button>
     <button type="button" class="msg-action-btn msg-action-btn--copy" title="Copy reply">
       <i class="far fa-copy"></i>
     </button>
@@ -943,6 +946,55 @@ els.messages?.addEventListener("click", (event) => {
           copyCodeBtn.classList.remove("success");
         }, 2000);
       });
+    }
+    return;
+  }
+
+  // Speak message button
+  const speakBtn = event.target.closest(".msg-action-btn--speak");
+  if (speakBtn) {
+    const bubble = speakBtn.closest(".message");
+    const rawContent = bubble?.dataset.raw || bubble?.querySelector(".message-text")?.textContent || "";
+    
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+      const allSpeakBtns = els.messages.querySelectorAll(".msg-action-btn--speak i");
+      allSpeakBtns.forEach(icon => {
+        icon.className = "fas fa-volume-high";
+      });
+      
+      if (speakBtn.dataset.speaking === "true") {
+        speakBtn.removeAttribute("data-speaking");
+        return;
+      }
+    }
+
+    if (rawContent) {
+      let cleanText = rawContent
+        .replace(/:::ACTION.*?:::/g, "")
+        .replace(/[#*`_~]/g, "")
+        .replace(/\[(.*?)\]\(.*?\)/g, "$1")
+        .trim();
+
+      if (cleanText) {
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        const icon = speakBtn.querySelector("i");
+
+        utterance.onstart = () => {
+          speakBtn.dataset.speaking = "true";
+          if (icon) icon.className = "fas fa-volume-xmark";
+        };
+
+        const resetIcon = () => {
+          speakBtn.removeAttribute("data-speaking");
+          if (icon) icon.className = "fas fa-volume-high";
+        };
+
+        utterance.onend = resetIcon;
+        utterance.onerror = resetIcon;
+
+        window.speechSynthesis.speak(utterance);
+      }
     }
     return;
   }
