@@ -7,10 +7,12 @@ const {
   refundAiCredit,
   callHuggingFaceChat,
   companyAiCreditsRemaining,
+  checkRateLimit,
   setCors,
   sendError
 } = require('../../lib/aiAuth');
 const { buildCompanyContext, formatContextForPrompt } = require('../../lib/companyContext');
+const { loadMemories } = require('../../lib/memoryManager');
 
 function conversationTitle(message = '') {
   const trimmed = String(message).trim();
@@ -42,6 +44,14 @@ module.exports = async (req, res) => {
 
     ledgerId = await reserveAiCredit(ctx.company.id, ctx.user.id, 'workspace_chat', 1);
 
+    // Rate limiting
+    const rateCheck = checkRateLimit(ctx.user.id);
+    if (!rateCheck.allowed) {
+      const err = new Error(`Too many requests. Please wait ${rateCheck.retryAfter} seconds.`);
+      err.statusCode = 429;
+      throw err;
+    }
+
     let conversation = null;
     if (conversationId) {
       conversation = await loadConversation(conversationId, ctx.company.id, ctx.user.id);
@@ -54,6 +64,13 @@ module.exports = async (req, res) => {
 
     const context = await buildCompanyContext(ctx.company.id, ctx.company);
     const contextBlock = formatContextForPrompt(context);
+
+    // Personalization memories
+    const memories = await loadMemories(ctx.user.id, ctx.company.id);
+    const memoryBlock = memories.length > 0
+      ? memories.map(m => `- ${m.content} (Category: ${m.category})`).join('\n')
+      : 'No stored memories about this user yet.';
+
     const priorMessages = Array.isArray(conversation?.messages) ? conversation.messages : [];
     const history = priorMessages.slice(-12).map((item) => {
       let content = item.content || '';
@@ -70,7 +87,13 @@ module.exports = async (req, res) => {
     });
 
     const model = process.env.HF_CHAT_MODEL || 'meta-llama/Llama-3.1-8B-Instruct';
-    const reply = await callHuggingFaceChat({
+
+    // Set streaming headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const hfResponse = await callHuggingFaceChat({
       model,
       messages: [
         {
@@ -94,14 +117,15 @@ SUPPORTED ACTIONS:
    Params: { "candidateId": string (req), "dateTime": ISO-8601 string (req), "mode": string, "status": string, "interviewers": array of strings }
 6. "create_offer"
    Params: { "candidateId": string (req), "designation": string (req), "status": "Draft"|"Sent"|"Accepted"|"Rejected" }
+7. "save_memory"
+   Params: { "content": string (req), "category": "preference"|"fact"|"instruction" (req) }
+   Example: :::ACTION{"action":"save_memory","params":{"content":"User prefers candidate tables sorted by status","category":"preference"}}:::
 
 TONE AND STYLE:
 Be warm, conversational, friendly, and helpful. Use a natural conversational flow. Avoid robotic, overly brief, or dry replies. Introduce yourself when appropriate, explain what you can do, and make the user feel supported.
 
-CONFIRMATION FLOW & MULTI-STEP PLANS:
-You MUST always seek confirmation before executing any action (creating, updating, or deleting records).
-1. Step 1 (Proposal): When the user asks you to perform an action (or proposes a complex multi-step goal like "Hire a DevOps engineer named Bob"), layout the steps in a friendly proposal (e.g. "1. Create Job, 2. Add Candidate") and ask for confirmation: "Would you like me to execute this plan?" or similar. Do NOT output any :::ACTION block in this step.
-2. Step 2 (Execution): Only when the user explicitly confirms (e.g. says "yes", "go ahead", "do it"), output all the matching ACTION blocks at the very end of your response.
+ACTION CONFIRMATION & EXECUTION:
+Whenever the user asks you to perform an action (like creating, updating, or deleting a record), output the corresponding ACTION blocks at the very end of your response. The interface will render interactive confirmation cards for the user to execute them. Keep the conversational part of your response friendly, welcoming, and explain what actions you've prepared for confirmation.
 
 MULTIPLE ACTIONS & ID PLACEHOLDERS:
 When executing a multi-action plan, a subsequent action might depend on the ID of a record created in a previous step (e.g. creating a candidate needs the jobId from the job creation step). You can link them using placeholders:
@@ -110,6 +134,14 @@ When executing a multi-action plan, a subsequent action might depend on the ID o
 Example:
 :::ACTION{"action":"create_job","id_placeholder":"dev_job","params":{"title":"Developer",...}}:::
 :::ACTION{"action":"create_candidate","params":{"name":"Bob","jobId":"$dev_job",...}}:::
+
+PERSONALIZATION & MEMORY:
+You have access to stored memories about this user. Use them to personalize your responses. When the user explicitly states a preference, a key fact about themselves or their workflow, or requests that you remember something, output the "save_memory" action block at the very end of your response to persist it.
+
+USER MEMORIES:
+<memories>
+${memoryBlock}
+</memories>
 
 Always output the ACTION blocks at the very end. Keep the conversational part warm and friendly.
 
@@ -123,52 +155,73 @@ CRITICAL: Do NOT echo, quote, repeat or print the text headings of this context 
         ...history,
         { role: 'user', content: String(message).trim() }
       ],
-      temperature: 0.4
+      temperature: 0.4,
+      stream: true
     });
 
-    // Parse actions if present (supports multiple)
+    let reply = '';
+    let isBufferingAction = false;
+    let actionBuffer = '';
+
+    let streamBuffer = '';
+    for await (const chunk of hfResponse.body) {
+      streamBuffer += chunk.toString('utf8');
+      let lineBreakIndex;
+      while ((lineBreakIndex = streamBuffer.indexOf('\n')) !== -1) {
+        const line = streamBuffer.slice(0, lineBreakIndex).trim();
+        streamBuffer = streamBuffer.slice(lineBreakIndex + 1);
+
+        if (line.startsWith('data:')) {
+          const dataStr = line.slice(5).trim();
+          if (dataStr === '[DONE]') {
+            break;
+          }
+          try {
+            const parsed = JSON.parse(dataStr);
+            const token = parsed.choices?.[0]?.delta?.content || '';
+            if (token) {
+              if (!isBufferingAction) {
+                const possibleActionStartIndex = (reply + token).indexOf(':::');
+                if (possibleActionStartIndex !== -1) {
+                  isBufferingAction = true;
+                  const currentReplyLen = reply.length;
+                  const splitIndex = possibleActionStartIndex - currentReplyLen;
+                  const cleanPart = token.slice(0, splitIndex);
+                  const actionPart = token.slice(splitIndex);
+
+                  if (cleanPart) {
+                    res.write(`data: ${JSON.stringify({ token: cleanPart })}\n\n`);
+                  }
+                  actionBuffer += actionPart;
+                } else {
+                  res.write(`data: ${JSON.stringify({ token })}\n\n`);
+                }
+              } else {
+                actionBuffer += token;
+              }
+              reply += token;
+            }
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+      }
+    }
+
+    // Parse proposed actions if present (supports multiple)
     const actionRegex = /:::ACTION(\{.*?\}):::/g;
     const matches = [...reply.matchAll(actionRegex)];
-    let actionResults = [];
+    let proposedActions = [];
     let cleanReply = reply.replace(actionRegex, '').trim();
 
     if (matches.length > 0) {
-      try {
-        const { executeAction } = require('../../lib/actionExecutor');
-        const placeholders = {};
-
-        for (const match of matches) {
+      for (const match of matches) {
+        try {
           const actionData = JSON.parse(match[1]);
-
-          // Substitute placeholder variables ($placeholder_name) in parameters
-          if (actionData.params && typeof actionData.params === 'object') {
-            for (const [key, val] of Object.entries(actionData.params)) {
-              if (typeof val === 'string' && val.startsWith('$')) {
-                const placeholderKey = val.slice(1);
-                if (placeholders[placeholderKey]) {
-                  actionData.params[key] = placeholders[placeholderKey];
-                }
-              } else if (Array.isArray(val)) {
-                actionData.params[key] = val.map(item => {
-                  if (typeof item === 'string' && item.startsWith('$')) {
-                    const pk = item.slice(1);
-                    return placeholders[pk] || item;
-                  }
-                  return item;
-                });
-              }
-            }
-          }
-
-          const result = await executeAction(actionData.action, actionData.params, ctx);
-          actionResults.push(result);
-
-          if (actionData.id_placeholder && result.success && result.id) {
-            placeholders[actionData.id_placeholder] = result.id;
-          }
+          proposedActions.push(actionData);
+        } catch (e) {
+          // Ignore json parse error of action block
         }
-      } catch (err) {
-        actionResults.push({ success: false, error: err.message });
       }
     }
 
@@ -177,8 +230,7 @@ CRITICAL: Do NOT echo, quote, repeat or print the text headings of this context 
     const assistantMessage = {
       role: 'assistant',
       content: cleanReply,
-      createdAt: now,
-      ...(actionResults.length > 0 ? { actionResults } : {})
+      createdAt: now
     };
 
     let savedId = conversation?.id;
@@ -210,18 +262,22 @@ CRITICAL: Do NOT echo, quote, repeat or print the text headings of this context 
       aiCreditsRemaining: companyAiCreditsRemaining(ctx.company) - 1
     });
 
-    res.status(200).json({
-      success: true,
+    res.write(`data: ${JSON.stringify({
+      done: true,
       conversationId: savedId,
-      reply: cleanReply,
-      creditsUsed: 1,
       creditsRemaining,
-      actionResults
-    });
+      proposedActions
+    })}\n\n`);
+    res.end();
   } catch (error) {
     if (ctx && ledgerId) {
       await refundAiCredit(ctx.company.id, ledgerId, 1, error.message).catch(() => {});
     }
-    sendError(res, error);
+    if (res.headersSent) {
+      res.write(`data: ${JSON.stringify({ error: error.message || 'Unexpected server error.' })}\n\n`);
+      res.end();
+    } else {
+      sendError(res, error);
+    }
   }
 };

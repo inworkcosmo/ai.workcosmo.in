@@ -15,6 +15,9 @@
 </head>
 
 <body>
+  <div id="connection-status" class="connection-status-bar hidden">
+    <i class="fas fa-wifi-slash"></i> You are offline. Reconnecting...
+  </div>
   <div id="auth-loader" class="auth-loader">
     <div class="loader-content">
       <div class="loader-brand">
@@ -27,31 +30,41 @@
   </div>
 
   <div id="app-shell" class="app-shell hidden">
-    <aside class="sidebar">
+    <aside class="sidebar" role="navigation" aria-label="Sidebar Navigation">
       <div class="sidebar-top">
         <a href="https://space.workcosmo.in" class="sidebar-brand">
           <img src="https://workcosmo.in/src/images/ngu_logo.png" alt="Workcosmo">
           <span>Workcosmo AI</span>
         </a>
-        <button id="new-chat-btn" type="button" class="new-chat-btn">
+        <button id="new-chat-btn" type="button" class="new-chat-btn" aria-label="Start a new chat">
           <i class="fas fa-plus"></i>
           New chat
         </button>
-      </div>
-      <div id="conversation-list" class="conversation-list"></div>
-      <div class="sidebar-footer">
-        <div class="credit-pill">
-          <i class="fas fa-coins"></i>
-          <span id="credits-label">— credits</span>
+        <div class="search-wrapper">
+          <i class="fas fa-magnifying-glass search-icon"></i>
+          <input type="search" id="conversation-search" placeholder="Search chats..." aria-label="Search conversations">
         </div>
-        <button id="sign-out-btn" type="button" class="ghost-btn">
+      </div>
+      <div id="conversation-list" class="conversation-list" role="list" aria-label="Conversations"></div>
+      <div class="sidebar-footer">
+        <div class="sidebar-footer-row">
+          <div class="credit-pill" aria-label="Remaining AI credits">
+            <i class="fas fa-coins"></i>
+            <span id="credits-label">— credits</span>
+          </div>
+          <button id="memory-btn" type="button" class="ghost-btn icon-only-btn" title="Manage AI Memory" aria-label="Manage personalization and memories">
+            <i class="fas fa-brain"></i>
+            <span id="memory-count-badge" class="badge">0</span>
+          </button>
+        </div>
+        <button id="sign-out-btn" type="button" class="ghost-btn" aria-label="Sign out">
           <i class="fas fa-arrow-right-from-bracket"></i>
           Sign out
         </button>
       </div>
     </aside>
 
-    <main class="chat-main">
+    <main class="chat-main" role="main" aria-label="Chat Area">
       <header class="chat-header">
         <div>
           <p class="eyebrow">Workspace Assistant</p>
@@ -62,17 +75,23 @@
         </div>
       </header>
 
-      <section id="messages" class="messages">
+      <section id="messages" class="messages" aria-live="polite" aria-relevant="additions">
         <div class="empty-state" id="empty-state">
           <div class="empty-icon"><i class="fas fa-brain"></i></div>
           <h2>Ask anything about your workspace</h2>
           <p>Jobs, candidates, interviews, offers, and team data — scoped to your company.</p>
+          <div class="suggestion-chips">
+            <button type="button" class="suggestion-chip" data-prompt="Show me all open jobs" aria-label="Show me all open jobs">Show me all open jobs</button>
+            <button type="button" class="suggestion-chip" data-prompt="How many candidates are in screening?" aria-label="How many candidates are in screening?">How many candidates are in screening?</button>
+            <button type="button" class="suggestion-chip" data-prompt="What interviews are scheduled this week?" aria-label="What interviews are scheduled this week?">What interviews are scheduled this week?</button>
+            <button type="button" class="suggestion-chip" data-prompt="Create a new job posting" aria-label="Create a new job posting">Create a new job posting</button>
+          </div>
         </div>
       </section>
 
       <form id="composer-form" class="composer">
         <div class="composer-wrapper">
-          <textarea id="composer-input" rows="1" placeholder="Message Workcosmo AI..." required></textarea>
+          <textarea id="composer-input" rows="1" placeholder="Message Workcosmo AI..." required aria-label="Composer input"></textarea>
           <button id="send-btn" type="submit" aria-label="Send message">
             <i class="fas fa-arrow-up"></i>
           </button>
@@ -80,6 +99,21 @@
         <div class="composer-footer">Workcosmo AI can retrieve records and execute actions.</div>
       </form>
     </main>
+  </div>
+
+  <div id="memory-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2><i class="fas fa-brain"></i> Personalization & Memory</h2>
+        <button id="close-memory-modal" type="button" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Workcosmo AI saves key preferences and facts here to personalize your responses. You can view or delete them below.</p>
+        <div id="memory-list" class="memory-list">
+          <!-- Memories list gets populated dynamically -->
+        </div>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="./src/app.js"></script>

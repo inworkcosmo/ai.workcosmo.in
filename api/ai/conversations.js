@@ -1,4 +1,5 @@
 const {
+  admin,
   db,
   getAuthedContext,
   setCors,
@@ -58,6 +59,29 @@ module.exports = async (req, res) => {
           updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() || data.updatedAt || null
         }
       });
+    }
+
+    if (req.method === 'PATCH') {
+      const { conversationId, title } = req.body || {};
+      if (!conversationId || !title || !title.trim()) {
+        return res.status(400).json({ error: 'conversationId and title are required.' });
+      }
+
+      const snap = await db.collection('aiConversations').doc(conversationId).get();
+      if (!snap.exists) {
+        return res.status(404).json({ error: 'Conversation not found.' });
+      }
+      const data = snap.data();
+      if (data.companyId !== ctx.company.id || data.userId !== ctx.user.id) {
+        return res.status(403).json({ error: 'Access denied.' });
+      }
+
+      await db.collection('aiConversations').doc(conversationId).update({
+        title: title.trim(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      return res.status(200).json({ success: true, conversationId, title: title.trim() });
     }
 
     if (req.method === 'DELETE') {
