@@ -36,7 +36,8 @@ const els = {
   voiceBtn: document.getElementById("voice-btn"),
   stopBtn: document.getElementById("stop-btn"),
   stopContainer: document.getElementById("stop-generation-container"),
-  scrollBottomBtn: document.getElementById("scroll-bottom-btn")
+  scrollBottomBtn: document.getElementById("scroll-bottom-btn"),
+  exportBtn: document.getElementById("export-chat-btn")
 };
 
 function apiBase() {
@@ -259,6 +260,12 @@ const actionToolbarHtml = `
     </button>
     <button type="button" class="msg-action-btn msg-action-btn--regenerate" title="Regenerate response">
       <i class="fas fa-rotate-right"></i>
+    </button>
+    <button type="button" class="msg-action-btn msg-action-btn--thumb-up" title="Good response">
+      <i class="far fa-thumbs-up"></i>
+    </button>
+    <button type="button" class="msg-action-btn msg-action-btn--thumb-down" title="Bad response">
+      <i class="far fa-thumbs-down"></i>
     </button>
   </div>
 `;
@@ -712,7 +719,13 @@ function renderMessages(messages = []) {
         ${actionHtml}
         <div class="message-footer">
           ${timeLabel}
-          ${msg.role === "assistant" ? actionToolbarHtml : ""}
+          ${msg.role === "assistant" ? actionToolbarHtml : `
+            <div class="message-actions">
+              <button type="button" class="msg-action-btn msg-action-btn--edit" title="Edit message">
+                <i class="fas fa-pencil"></i>
+              </button>
+            </div>
+          `}
         </div>
       </div>
     `;
@@ -900,7 +913,7 @@ function startNewChat() {
   els.composerInput.focus();
 }
 
-async function sendMessage(message) {
+async function sendMessage(message, truncateFromIndex = null) {
   if (state.sending) return;
   state.sending = true;
   els.sendBtn.disabled = true;
@@ -912,7 +925,16 @@ async function sendMessage(message) {
   userBubble.dataset.raw = message;
   userBubble.innerHTML = `
     <div class="message-avatar"><i class="fas fa-user"></i></div>
-    <div class="message-body">${parseMarkdown(message)}</div>
+    <div class="message-body">
+      <div class="message-text">${parseMarkdown(message)}</div>
+      <div class="message-footer">
+        <div class="message-actions">
+          <button type="button" class="msg-action-btn msg-action-btn--edit" title="Edit message">
+            <i class="fas fa-pencil"></i>
+          </button>
+        </div>
+      </div>
+    </div>
   `;
   renderEmptyState(false);
   els.messages.appendChild(userBubble);
@@ -967,7 +989,8 @@ async function sendMessage(message) {
       body: JSON.stringify({
         companyId: state.companyId,
         conversationId: state.conversationId,
-        message
+        message,
+        ...(truncateFromIndex !== null ? { truncateFromIndex } : {})
       })
     });
 
@@ -1143,7 +1166,20 @@ els.composerForm?.addEventListener("submit", async (event) => {
   if (!message) return;
   els.composerInput.value = "";
   els.composerInput.style.height = "auto";
-  await sendMessage(message);
+  
+  let truncateIndex = null;
+  if (els.composerForm.dataset.truncateIndex) {
+    truncateIndex = parseInt(els.composerForm.dataset.truncateIndex, 10);
+    delete els.composerForm.dataset.truncateIndex;
+    
+    // Remove old messages from DOM
+    const messages = [...els.messages.querySelectorAll(".message")];
+    for (let i = messages.length - 1; i >= truncateIndex; i--) {
+      messages[i].remove();
+    }
+  }
+  
+  await sendMessage(message, truncateIndex);
 });
 
 els.composerInput?.addEventListener("input", () => {
@@ -1224,6 +1260,33 @@ els.voiceBtn?.addEventListener("click", () => {
   } else {
     recognition.start();
   }
+});
+
+els.exportBtn?.addEventListener("click", () => {
+  const messages = [...els.messages.querySelectorAll(".message")];
+  if (messages.length === 0) {
+    alert("No messages to export.");
+    return;
+  }
+  
+  let exportText = `# Workcosmo AI Chat Export\nDate: ${new Date().toLocaleString()}\n\n`;
+  messages.forEach(msg => {
+    const role = msg.classList.contains("message--user") ? "User" : "Workcosmo AI";
+    const text = msg.dataset.raw || msg.querySelector(".message-body").textContent.trim();
+    if (text) {
+      exportText += `### ${role}\n${text}\n\n---\n\n`;
+    }
+  });
+  
+  const blob = new Blob([exportText], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Workcosmo_Chat_${new Date().toISOString().slice(0,10)}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 });
 
 els.conversationList?.addEventListener("click", async (event) => {
@@ -1379,12 +1442,42 @@ els.messages?.addEventListener("click", (event) => {
       for (let i = messages.length - 1; i >= currentIndex; i--) {
         messages[i].remove();
       }
-      sendMessage(lastUserMessage);
+      sendMessage(lastUserMessage, currentIndex);
     }
     return;
   }
 
-  // 4. Suggestion chips clicks
+  // 4. Edit user message
+  const editBtn = event.target.closest(".msg-action-btn--edit");
+  if (editBtn) {
+    const bubble = editBtn.closest(".message");
+    const rawContent = bubble?.dataset.raw || "";
+    els.composerInput.value = rawContent;
+    els.composerInput.focus();
+    els.composerInput.dispatchEvent(new Event("input"));
+    
+    const messages = [...els.messages.querySelectorAll(".message")];
+    const currentIndex = messages.indexOf(bubble);
+    els.composerForm.dataset.truncateIndex = currentIndex;
+    
+    messages.forEach(m => m.classList.remove("editing"));
+    bubble.classList.add("editing");
+    return;
+  }
+
+  // 5. Thumbs up/down
+  const thumbBtn = event.target.closest(".msg-action-btn--thumb-up, .msg-action-btn--thumb-down");
+  if (thumbBtn) {
+    thumbBtn.classList.toggle("active");
+    if (thumbBtn.classList.contains("active")) {
+      thumbBtn.querySelector("i").classList.replace("far", "fas");
+    } else {
+      thumbBtn.querySelector("i").classList.replace("fas", "far");
+    }
+    return;
+  }
+
+  // 6. Suggestion chips clicks
   const chip = event.target.closest(".suggestion-chip");
   if (chip) {
     const prompt = chip.dataset.prompt;

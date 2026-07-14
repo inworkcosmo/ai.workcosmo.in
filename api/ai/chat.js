@@ -37,7 +37,7 @@ module.exports = async (req, res) => {
   let ledgerId;
   try {
     ctx = await getAuthedContext(req);
-    const { message, conversationId } = req.body || {};
+    const { message, conversationId, truncateFromIndex } = req.body || {};
     if (!message || !String(message).trim()) {
       return res.status(400).json({ error: 'Message is required.' });
     }
@@ -71,7 +71,10 @@ module.exports = async (req, res) => {
       ? memories.map(m => `- ${m.content} (Category: ${m.category})`).join('\n')
       : 'No stored memories about this user yet.';
 
-    const priorMessages = Array.isArray(conversation?.messages) ? conversation.messages : [];
+    let priorMessages = Array.isArray(conversation?.messages) ? conversation.messages : [];
+    if (typeof truncateFromIndex === 'number' && truncateFromIndex >= 0) {
+      priorMessages = priorMessages.slice(0, truncateFromIndex);
+    }
     const history = priorMessages.slice(-12).map((item) => {
       let content = item.content || '';
       if (item.role === 'assistant') {
