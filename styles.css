@@ -406,6 +406,11 @@ body {
   font-weight: 600;
 }
 
+.header-meta {
+  display: flex;
+  align-items: center;
+}
+
 .user-label {
   font-size: 13px;
   color: var(--muted);
@@ -524,6 +529,48 @@ body {
   40% { transform: translateY(-4px); opacity: 1; }
 }
 
+/* Message actions and footer */
+.message-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  gap: 8px;
+}
+
+.message-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.message:hover .message-actions {
+  opacity: 1;
+}
+
+.msg-action-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.msg-action-btn:hover {
+  background: rgba(0,0,0,0.05);
+}
+
+.msg-action-btn.active {
+  color: var(--accent);
+}
+
 .composer {
   max-width: 768px;
   margin: 0 auto;
@@ -559,7 +606,7 @@ body {
   font-family: inherit;
   font-size: 15px;
   line-height: 1.5;
-  padding: 10px 48px 10px 12px;
+  padding: 10px 12px;
   outline: none;
   resize: none;
   min-height: 44px;
@@ -567,9 +614,7 @@ body {
 }
 
 .composer-wrapper button {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
+  position: static;
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -581,6 +626,8 @@ body {
   justify-content: center;
   cursor: pointer;
   transition: opacity 0.2s, background-color 0.2s, transform 0.1s;
+  flex-shrink: 0;
+  margin-bottom: 6px;
 }
 
 .composer-wrapper button:hover {
