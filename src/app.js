@@ -13,6 +13,8 @@ const state = {
   searchQuery: ""
 };
 
+let currentAbortController = null;
+
 const els = {
   workspaceTitle: document.getElementById("workspace-title"),
   userLabel: document.getElementById("user-label"),
@@ -30,7 +32,11 @@ const els = {
   memoryCountBadge: document.getElementById("memory-count-badge"),
   memoryModal: document.getElementById("memory-modal"),
   closeMemoryModal: document.getElementById("close-memory-modal"),
-  memoryList: document.getElementById("memory-list")
+  memoryList: document.getElementById("memory-list"),
+  voiceBtn: document.getElementById("voice-btn"),
+  stopBtn: document.getElementById("stop-btn"),
+  stopContainer: document.getElementById("stop-generation-container"),
+  scrollBottomBtn: document.getElementById("scroll-bottom-btn")
 };
 
 function apiBase() {
@@ -92,6 +98,8 @@ function parseMarkdown(text = "") {
   let inUnorderedList = false;
   let inOrderedList = false;
   let inCodeBlock = false;
+  let inTable = false;
+  let tableHeader = true;
   let codeBlockContent = [];
   let codeBlockLang = "";
 
@@ -101,6 +109,9 @@ function parseMarkdown(text = "") {
 
     // Code blocks
     if (trimmed.startsWith("```")) {
+      if (inTable) { htmlResult.push("</tbody></table>"); inTable = false; }
+      if (inUnorderedList) { htmlResult.push("</ul>"); inUnorderedList = false; }
+      if (inOrderedList) { htmlResult.push("</ol>"); inOrderedList = false; }
       if (inCodeBlock) {
         inCodeBlock = false;
         const codeText = escapeHtml(codeBlockContent.join("\n"));
@@ -125,6 +136,41 @@ function parseMarkdown(text = "") {
     if (inCodeBlock) {
       codeBlockContent.push(line);
       continue;
+    }
+
+    // Markdown Table parsing
+    const isTableLine = trimmed.startsWith("|") && trimmed.endsWith("|");
+    if (isTableLine) {
+      if (inUnorderedList) { htmlResult.push("</ul>"); inUnorderedList = false; }
+      if (inOrderedList) { htmlResult.push("</ol>"); inOrderedList = false; }
+      
+      const cells = trimmed.split("|").slice(1, -1).map(c => c.trim());
+      const isSeparator = cells.every(c => /^:?-+:?$/.test(c));
+      
+      if (isSeparator) {
+        tableHeader = false;
+        continue;
+      }
+      
+      if (!inTable) {
+        inTable = true;
+        tableHeader = true;
+        htmlResult.push("<table><thead>");
+      }
+      
+      if (tableHeader) {
+        htmlResult.push("<tr>" + cells.map(c => `<th>${parseInlineMarkdown(c)}</th>`).join("") + "</tr>");
+        htmlResult.push("</thead><tbody>");
+        tableHeader = false;
+      } else {
+        htmlResult.push("<tr>" + cells.map(c => `<td>${parseInlineMarkdown(c)}</td>`).join("") + "</tr>");
+      }
+      continue;
+    } else {
+      if (inTable) {
+        htmlResult.push("</tbody></table>");
+        inTable = false;
+      }
     }
 
     // Horizontal Rule
@@ -184,6 +230,7 @@ function parseMarkdown(text = "") {
     htmlResult.push(`<p>${parseInlineMarkdown(line)}</p>`);
   }
 
+  if (inTable) htmlResult.push("</tbody></table>");
   if (inUnorderedList) htmlResult.push("</ul>");
   if (inOrderedList) htmlResult.push("</ol>");
   if (inCodeBlock && codeBlockContent.length > 0) {
@@ -239,14 +286,166 @@ function formatActionLabel(action, params) {
   }
 }
 
+function renderActionFields(action, params = {}, index) {
+  let fieldsHtml = "";
+  switch (action) {
+    case 'create_job':
+      fieldsHtml = `
+        <div class="action-field-group">
+          <label>Job Title*</label>
+          <input type="text" class="action-field-input" data-param="title" value="${escapeHtml(params.title || '')}" required>
+        </div>
+        <div class="action-field-group">
+          <label>Department</label>
+          <input type="text" class="action-field-input" data-param="department" value="${escapeHtml(params.department || '')}">
+        </div>
+        <div class="action-field-group">
+          <label>Designation</label>
+          <input type="text" class="action-field-input" data-param="designation" value="${escapeHtml(params.designation || '')}">
+        </div>
+        <div class="action-field-group">
+          <label>Location</label>
+          <input type="text" class="action-field-input" data-param="location" value="${escapeHtml(params.location || '')}">
+        </div>
+        <div class="action-field-group">
+          <label>Budget (LPA)</label>
+          <input type="number" step="0.1" class="action-field-input" data-param="budget" value="${params.budget || ''}">
+        </div>
+        <div class="action-field-group">
+          <label>Priority</label>
+          <select class="action-field-input" data-param="priority">
+            <option value="Urgent" ${params.priority === 'Urgent' ? 'selected' : ''}>Urgent</option>
+            <option value="Medium" ${params.priority !== 'Urgent' && params.priority !== 'Low' ? 'selected' : ''}>Medium</option>
+            <option value="Low" ${params.priority === 'Low' ? 'selected' : ''}>Low</option>
+          </select>
+        </div>
+      `;
+      break;
+    case 'create_candidate':
+      fieldsHtml = `
+        <div class="action-field-group">
+          <label>Name*</label>
+          <input type="text" class="action-field-input" data-param="name" value="${escapeHtml(params.name || '')}" required>
+        </div>
+        <div class="action-field-group">
+          <label>Email*</label>
+          <input type="email" class="action-field-input" data-param="email" value="${escapeHtml(params.email || '')}" required>
+        </div>
+        <div class="action-field-group">
+          <label>Phone</label>
+          <input type="text" class="action-field-input" data-param="phone" value="${escapeHtml(params.phone || '')}">
+        </div>
+        <div class="action-field-group">
+          <label>Stage</label>
+          <input type="text" class="action-field-input" data-param="stage" value="${escapeHtml(params.stage || 'Screening')}">
+        </div>
+        <div class="action-field-group">
+          <label>Job ID / Placeholder</label>
+          <input type="text" class="action-field-input" data-param="jobId" value="${escapeHtml(params.jobId || '')}" required>
+        </div>
+      `;
+      break;
+    case 'schedule_interview':
+      let dtVal = params.dateTime || '';
+      if (dtVal && dtVal.includes('Z')) {
+        try { dtVal = new Date(dtVal).toISOString().slice(0, 16); } catch {}
+      }
+      fieldsHtml = `
+        <div class="action-field-group">
+          <label>Candidate ID / Placeholder</label>
+          <input type="text" class="action-field-input" data-param="candidateId" value="${escapeHtml(params.candidateId || '')}" required>
+        </div>
+        <div class="action-field-group">
+          <label>Interview Date & Time*</label>
+          <input type="datetime-local" class="action-field-input" data-param="dateTime" value="${dtVal}" required>
+        </div>
+        <div class="action-field-group">
+          <label>Mode</label>
+          <input type="text" class="action-field-input" data-param="mode" value="${escapeHtml(params.mode || 'Online')}">
+        </div>
+        <div class="action-field-group">
+          <label>Interviewers (comma separated)</label>
+          <input type="text" class="action-field-input" data-param="interviewers" value="${escapeHtml(Array.isArray(params.interviewers) ? params.interviewers.join(', ') : params.interviewers || '')}">
+        </div>
+      `;
+      break;
+    case 'create_offer':
+      fieldsHtml = `
+        <div class="action-field-group">
+          <label>Candidate ID / Placeholder</label>
+          <input type="text" class="action-field-input" data-param="candidateId" value="${escapeHtml(params.candidateId || '')}" required>
+        </div>
+        <div class="action-field-group">
+          <label>Designation*</label>
+          <input type="text" class="action-field-input" data-param="designation" value="${escapeHtml(params.designation || '')}" required>
+        </div>
+        <div class="action-field-group">
+          <label>Status</label>
+          <select class="action-field-input" data-param="status">
+            <option value="Draft" ${params.status === 'Draft' ? 'selected' : ''}>Draft</option>
+            <option value="Sent" ${params.status === 'Sent' ? 'selected' : ''}>Sent</option>
+            <option value="Accepted" ${params.status === 'Accepted' ? 'selected' : ''}>Accepted</option>
+            <option value="Rejected" ${params.status === 'Rejected' ? 'selected' : ''}>Rejected</option>
+          </select>
+        </div>
+      `;
+      break;
+    case 'update_record':
+      fieldsHtml = `
+        <div class="action-field-group">
+          <label>Collection</label>
+          <input type="text" class="action-field-input" data-param="collection" value="${escapeHtml(params.collection || '')}" disabled>
+        </div>
+        <div class="action-field-group">
+          <label>Record ID</label>
+          <input type="text" class="action-field-input" data-param="id" value="${escapeHtml(params.id || '')}" disabled>
+        </div>
+        <div class="action-field-group">
+          <label>Update Data (JSON)</label>
+          <textarea class="action-field-input" data-param="data" rows="3">${escapeHtml(JSON.stringify(params.data || {}, null, 2))}</textarea>
+        </div>
+      `;
+      break;
+    case 'delete_record':
+      fieldsHtml = `
+        <div class="action-field-group">
+          <label>Collection</label>
+          <input type="text" class="action-field-input" data-param="collection" value="${escapeHtml(params.collection || '')}" disabled>
+        </div>
+        <div class="action-field-group">
+          <label>Record ID</label>
+          <input type="text" class="action-field-input" data-param="id" value="${escapeHtml(params.id || '')}" disabled>
+        </div>
+      `;
+      break;
+    default:
+      fieldsHtml = `
+        <div class="action-field-group">
+          <label>Params (JSON)</label>
+          <textarea class="action-field-input" data-raw-params="true" rows="4">${escapeHtml(JSON.stringify(params, null, 2))}</textarea>
+        </div>
+      `;
+  }
+  return fieldsHtml;
+}
+
 function renderProposedActionsCard(actions = []) {
   if (actions.length === 0) return "";
   
-  const itemsHtml = actions.map((act) => {
+  const itemsHtml = actions.map((act, idx) => {
+    const fields = renderActionFields(act.action, act.params || {}, idx);
     return `
-      <div class="proposed-action-item">
-        <i class="fas fa-angles-right"></i>
-        <span>${formatActionLabel(act.action, act.params || {})}</span>
+      <div class="proposed-action-item" data-index="${idx}" data-action="${escapeHtml(act.action)}" data-placeholder="${escapeHtml(act.id_placeholder || '')}">
+        <div class="proposed-action-item-header">
+          <input type="checkbox" class="proposed-action-checkbox" checked title="Select action to execute">
+          <span class="proposed-action-label">${formatActionLabel(act.action, act.params || {})}</span>
+          <button type="button" class="proposed-action-toggle-details" title="Configure details">
+            <i class="fas fa-sliders-h"></i>&nbsp;Configure
+          </button>
+        </div>
+        <div class="proposed-action-fields hidden">
+          ${fields}
+        </div>
       </div>
     `;
   }).join("");
@@ -254,15 +453,15 @@ function renderProposedActionsCard(actions = []) {
   return `
     <div class="action-proposal-card">
       <div class="action-proposal-header">
-        <i class="fas fa-circle-question"></i>
-        <span>Confirm Action Plan</span>
+        <i class="fas fa-clipboard-list"></i>
+        <span>Review Executable Plan</span>
       </div>
       <div class="action-proposal-body">
         ${itemsHtml}
       </div>
       <div class="action-proposal-footer">
-        <button type="button" class="action-btn action-btn--execute"><i class="fas fa-play"></i> Execute Plan</button>
-        <button type="button" class="action-btn action-btn--cancel"><i class="fas fa-xmark"></i> Cancel</button>
+        <button type="button" class="action-btn action-btn--execute"><i class="fas fa-play"></i> Execute Selected</button>
+        <button type="button" class="action-btn action-btn--cancel"><i class="fas fa-xmark"></i> Cancel Plan</button>
       </div>
     </div>
   `;
@@ -272,26 +471,102 @@ async function executeProposedActions(conversationId, actions, bubble) {
   const card = bubble.querySelector(".action-proposal-card");
   if (!card) return;
 
-  const footer = card.querySelector(".action-proposal-footer");
-  if (footer) {
-    footer.innerHTML = `
+  const selectedActions = [];
+  const items = card.querySelectorAll(".proposed-action-item");
+  
+  items.forEach(item => {
+    const checkbox = item.querySelector(".proposed-action-checkbox");
+    if (!checkbox || !checkbox.checked) return;
+
+    const action = item.dataset.action;
+    const placeholder = item.dataset.placeholder;
+    const params = {};
+
+    const paramInputs = item.querySelectorAll("[data-param]");
+    paramInputs.forEach(input => {
+      const key = input.dataset.param;
+      let val = input.value;
+      if (input.type === 'number') {
+        val = val === '' ? null : Number(val);
+      }
+      if (key === 'interviewers') {
+        val = val.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      params[key] = val;
+    });
+
+    const rawTextarea = item.querySelector("[data-raw-params]");
+    if (rawTextarea) {
+      try {
+        Object.assign(params, JSON.parse(rawTextarea.value));
+      } catch (e) {
+        console.error("Invalid JSON params", e);
+      }
+    }
+
+    const actionData = { action, params };
+    if (placeholder) {
+      actionData.id_placeholder = placeholder;
+    }
+    selectedActions.push(actionData);
+  });
+
+  if (selectedActions.length === 0) {
+    alert("Please select at least one action to execute.");
+    return;
+  }
+
+  const bodyEl = card.querySelector(".action-proposal-body");
+  const footerEl = card.querySelector(".action-proposal-footer");
+  
+  card.querySelectorAll("input, select, textarea, button").forEach(el => el.disabled = true);
+
+  if (footerEl) {
+    footerEl.innerHTML = `
       <span class="action-executing-loader">
-        <i class="fas fa-spinner fa-spin"></i> Executing plan...
+        <i class="fas fa-spinner fa-spin"></i> Executing actions...
       </span>
     `;
   }
+
+  let progressHtml = `<div class="execution-steps-progress">`;
+  selectedActions.forEach((act, idx) => {
+    progressHtml += `
+      <div class="execution-progress-step running" id="exec-step-${idx}">
+        <i class="fas fa-circle-notch fa-spin"></i>
+        <span>Executing: ${formatActionLabel(act.action, act.params)}...</span>
+      </div>
+    `;
+  });
+  progressHtml += `</div>`;
+  bodyEl.insertAdjacentHTML("beforeend", progressHtml);
 
   try {
     const headers = await authHeaders();
     const res = await fetch(`${apiBase()}/api/ai/execute-actions`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ companyId: state.companyId, conversationId, actions })
+      body: JSON.stringify({ companyId: state.companyId, conversationId, actions: selectedActions })
     });
     const data = await safeJson(res);
     if (!res.ok) throw new Error(data.error || "Execution failed");
 
     const results = data.actionResults || [];
+    
+    selectedActions.forEach((act, idx) => {
+      const stepEl = card.querySelector(`#exec-step-${idx}`);
+      if (stepEl) {
+        const result = results[idx];
+        if (result && result.success) {
+          stepEl.className = "execution-progress-step success";
+          stepEl.innerHTML = `<i class="fas fa-circle-check"></i> <span>Success: ${escapeHtml(result.summary)}</span>`;
+        } else {
+          stepEl.className = "execution-progress-step failed";
+          stepEl.innerHTML = `<i class="fas fa-circle-xmark"></i> <span>Failed: ${escapeHtml(result ? result.error : "Unknown error")}</span>`;
+        }
+      }
+    });
+
     const actionHtml = results.map(res => {
       if (res.success) {
         return `
@@ -316,21 +591,28 @@ async function executeProposedActions(conversationId, actions, bubble) {
       }
     }).join("");
 
-    card.remove();
-    const body = bubble.querySelector(".message-body");
-    if (body) {
-      // Find the message-footer and insert before it
-      const footerEl = body.querySelector(".message-footer");
-      if (footerEl) {
-        footerEl.insertAdjacentHTML("beforebegin", actionHtml);
-      } else {
-        body.insertAdjacentHTML("beforeend", actionHtml);
+    setTimeout(() => {
+      card.remove();
+      const body = bubble.querySelector(".message-body");
+      if (body) {
+        const footerEl = body.querySelector(".message-footer");
+        if (footerEl) {
+          footerEl.insertAdjacentHTML("beforebegin", actionHtml);
+        } else {
+          body.insertAdjacentHTML("beforeend", actionHtml);
+        }
       }
-    }
+    }, 1200);
+
     await loadMemories();
   } catch (error) {
-    if (footer) {
-      footer.innerHTML = `
+    card.querySelectorAll("input, select, textarea, button").forEach(el => el.disabled = false);
+    
+    const progressEl = card.querySelector(".execution-steps-progress");
+    if (progressEl) progressEl.remove();
+
+    if (footerEl) {
+      footerEl.innerHTML = `
         <div class="action-execution-error">
           <i class="fas fa-circle-exclamation"></i> ${escapeHtml(error.message)}
           <button type="button" class="action-btn action-btn--execute" style="margin-left: 12px;"><i class="fas fa-rotate"></i> Retry</button>
@@ -671,21 +953,23 @@ async function sendMessage(message) {
   let assistantBubble = null;
   let replyText = "";
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  if (currentAbortController) {
+    currentAbortController.abort();
+  }
+  currentAbortController = new AbortController();
+  els.stopContainer?.classList.remove("hidden");
 
   try {
     const res = await fetch(`${apiBase()}/api/ai/chat`, {
       method: "POST",
       headers,
-      signal: controller.signal,
+      signal: currentAbortController.signal,
       body: JSON.stringify({
         companyId: state.companyId,
         conversationId: state.conversationId,
         message
       })
     });
-    clearTimeout(timeoutId);
 
     if (res.status === 402) {
       throw new Error("No AI credits remaining");
@@ -782,9 +1066,12 @@ async function sendMessage(message) {
             replyText += data.token;
             const contentDiv = assistantBubble.querySelector(".message-text");
             if (contentDiv) {
+              const wasAtBottom = els.messages.scrollHeight - els.messages.scrollTop - els.messages.clientHeight < 50;
               contentDiv.innerHTML = parseMarkdown(replyText);
+              if (wasAtBottom) {
+                els.messages.scrollTop = els.messages.scrollHeight;
+              }
             }
-            els.messages.scrollTop = els.messages.scrollHeight;
           }
         }
       }
@@ -796,7 +1083,6 @@ async function sendMessage(message) {
       if (active) renderConversationList();
     }
   } catch (error) {
-    clearTimeout(timeoutId);
     if (typingInterval) clearInterval(typingInterval);
     if (typing.parentNode) typing.remove();
     if (assistantBubble && !replyText) assistantBubble.remove();
@@ -843,6 +1129,8 @@ async function sendMessage(message) {
     els.messages.scrollTop = els.messages.scrollHeight;
   } finally {
     if (typingInterval) clearInterval(typingInterval);
+    els.stopContainer?.classList.add("hidden");
+    currentAbortController = null;
     state.sending = false;
     els.sendBtn.disabled = false;
     els.composerInput?.focus();
@@ -880,6 +1168,62 @@ els.signOutBtn?.addEventListener("click", async () => {
 els.conversationSearch?.addEventListener("input", (e) => {
   state.searchQuery = e.target.value;
   renderConversationList();
+});
+
+els.stopBtn?.addEventListener("click", () => {
+  if (currentAbortController) {
+    currentAbortController.abort();
+  }
+});
+
+els.messages?.addEventListener("scroll", () => {
+  if (!els.scrollBottomBtn) return;
+  const isNearBottom = els.messages.scrollHeight - els.messages.scrollTop - els.messages.clientHeight < 50;
+  if (isNearBottom) {
+    els.scrollBottomBtn.classList.add("hidden");
+  } else {
+    els.scrollBottomBtn.classList.remove("hidden");
+  }
+});
+
+els.scrollBottomBtn?.addEventListener("click", () => {
+  els.messages?.scrollTo({ top: els.messages.scrollHeight, behavior: "smooth" });
+});
+
+let recognition = null;
+if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SpeechRecognition();
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  
+  recognition.onstart = () => {
+    els.voiceBtn?.classList.add("recording");
+  };
+  
+  recognition.onend = () => {
+    els.voiceBtn?.classList.remove("recording");
+  };
+  
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    if (els.composerInput) {
+      els.composerInput.value += (els.composerInput.value ? " " : "") + transcript;
+      els.composerInput.dispatchEvent(new Event("input"));
+    }
+  };
+}
+
+els.voiceBtn?.addEventListener("click", () => {
+  if (!recognition) {
+    alert("Speech recognition is not supported in this browser.");
+    return;
+  }
+  if (els.voiceBtn.classList.contains("recording")) {
+    recognition.stop();
+  } else {
+    recognition.start();
+  }
 });
 
 els.conversationList?.addEventListener("click", async (event) => {

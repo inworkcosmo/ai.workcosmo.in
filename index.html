@@ -89,8 +89,22 @@
         </div>
       </section>
 
+      <div class="chat-controls-overlay">
+        <button id="scroll-bottom-btn" type="button" class="scroll-bottom-btn hidden" aria-label="Scroll to bottom">
+          <i class="fas fa-arrow-down"></i>
+        </button>
+        <div id="stop-generation-container" class="stop-generation-container hidden">
+          <button id="stop-btn" type="button" class="stop-btn" aria-label="Stop generating response">
+            <i class="fas fa-stop"></i> Stop generating
+          </button>
+        </div>
+      </div>
+
       <form id="composer-form" class="composer">
         <div class="composer-wrapper">
+          <button id="voice-btn" type="button" class="composer-action-btn" title="Voice Input" aria-label="Voice input">
+            <i class="fas fa-microphone"></i>
+          </button>
           <textarea id="composer-input" rows="1" placeholder="Message Workcosmo AI..." required aria-label="Composer input"></textarea>
           <button id="send-btn" type="submit" aria-label="Send message">
             <i class="fas fa-arrow-up"></i>
